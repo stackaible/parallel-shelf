@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Parallel Shelf — a walkable 3D bookshop</title>
+<style>
+  :root {
+    --paper: #f5ead6;
+    --ink: #241a12;
+    --amber: #e8a13c;
+    --teal: #2e6e63;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #191008; }
+  body { font-family: Georgia, "Iowan Old Style", serif; color: var(--paper); }
+  canvas { display: block; }
+
+  /* ---- start overlay ---- */
+  #start {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; text-align: center;
+    background: radial-gradient(ellipse at 50% 40%, #3a2716 0%, #1c1109 70%, #120a05 100%);
+    transition: opacity .6s ease;
+  }
+  #start.hidden { opacity: 0; pointer-events: none; }
+  #start .glyph { font-size: 44px; letter-spacing: 8px; }
+  #start h1 {
+    font-size: clamp(34px, 6vw, 64px); font-weight: normal; letter-spacing: 3px;
+    color: var(--paper); text-shadow: 0 0 40px rgba(232,161,60,.35);
+  }
+  #start h1 em { color: var(--amber); font-style: italic; }
+  #start .tag { font-style: italic; opacity: .75; font-size: 17px; }
+  #start .keys {
+    display: flex; gap: 22px; margin-top: 10px; font-size: 14px; opacity: .85;
+  }
+  #start .keys b {
+    font-family: ui-monospace, Menlo, monospace; background: rgba(245,234,214,.12);
+    border: 1px solid rgba(245,234,214,.3); border-radius: 6px; padding: 2px 8px; font-weight: normal;
+  }
+  #enter {
+    margin-top: 16px; font-family: inherit; font-size: 19px; letter-spacing: 1px;
+    color: var(--ink); background: var(--amber); border: none; border-radius: 10px;
+    padding: 13px 34px; cursor: pointer; box-shadow: 0 6px 24px rgba(232,161,60,.35);
+    transition: transform .15s ease;
+  }
+  #enter:hover { transform: translateY(-2px) scale(1.02); }
+  #start .note { font-size: 12.5px; opacity: .5; margin-top: 6px; }
+
+  /* ---- HUD ---- */
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; z-index: 10;
+    transform: translate(-50%, -50%); border-radius: 50%;
+    background: rgba(245,234,214,.9); box-shadow: 0 0 6px rgba(0,0,0,.8);
+    pointer-events: none; display: none;
+  }
+  #crosshair.hot { background: var(--amber); width: 9px; height: 9px; box-shadow: 0 0 12px var(--amber); }
+  #tooltip {
+    position: fixed; left: 50%; top: calc(50% + 26px); transform: translateX(-50%);
+    z-index: 10; pointer-events: none; display: none; max-width: 420px; text-align: center;
+    background: rgba(24,14,6,.88); border: 1px solid rgba(232,161,60,.5); border-radius: 8px;
+    padding: 7px 14px; font-size: 14.5px; font-style: italic;
+  }
+  #tooltip b { font-style: normal; color: var(--amber); }
+  #hint {
+    position: fixed; left: 16px; bottom: 14px; z-index: 10; font-size: 12.5px;
+    opacity: .55; pointer-events: none; display: none; line-height: 1.7;
+  }
+  #hint b { font-family: ui-monospace, Menlo, monospace; font-weight: normal;
+    background: rgba(245,234,214,.12); border-radius: 4px; padding: 0 5px; }
+  #toast {
+    position: fixed; left: 50%; top: 26px; transform: translateX(-50%) translateY(-8px);
+    z-index: 20; background: rgba(24,14,6,.92); border: 1px solid rgba(232,161,60,.6);
+    border-radius: 10px; padding: 10px 20px; font-size: 15px; opacity: 0;
+    transition: opacity .3s ease, transform .3s ease; pointer-events: none; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #soundBtn {
+    position: fixed; right: 16px; bottom: 14px; z-index: 10; display: none;
+    font-family: inherit; font-size: 13px; color: var(--paper); cursor: pointer;
+    background: rgba(24,14,6,.7); border: 1px solid rgba(245,234,214,.3); border-radius: 8px;
+    padding: 6px 12px; opacity: .75;
+  }
+  #soundBtn:hover { opacity: 1; }
+  #favBtn {
+    position: fixed; right: 16px; bottom: 52px; z-index: 10; display: none;
+    font-family: inherit; font-size: 13px; color: var(--paper); cursor: pointer;
+    background: rgba(24,14,6,.7); border: 1px solid rgba(245,234,214,.3); border-radius: 8px;
+    padding: 6px 12px; opacity: .75;
+  }
+  #favBtn:hover { opacity: 1; }
+  #cardFav {
+    position: absolute; top: 10px; right: 12px; background: none; border: none;
+    font-size: 26px; color: var(--paper); cursor: pointer; opacity: .65; line-height: 1;
+    transition: transform .12s ease;
+  }
+  #cardFav:hover { opacity: 1; transform: scale(1.15); }
+  #cardFav.on { color: #e0566b; opacity: 1; }
+
+  /* ---- favorites panel ---- */
+  #favPanel {
+    position: fixed; left: 24px; top: 50%; transform: translateY(-50%) translateX(-24px);
+    width: min(340px, calc(100vw - 48px)); max-height: 74vh; overflow-y: auto; z-index: 26;
+    background: linear-gradient(170deg, #2c1d10 0%, #201409 100%);
+    border: 1px solid rgba(232,161,60,.45); border-radius: 14px; padding: 18px 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease;
+  }
+  #favPanel.show { opacity: 1; pointer-events: auto; transform: translateY(-50%) translateX(0); }
+  #favPanel h3 { font-weight: normal; font-size: 19px; margin-bottom: 8px; color: var(--amber); }
+  #favPanel .favEmpty { font-style: italic; opacity: .6; font-size: 14px; padding: 8px 0 4px; }
+  .favRow { border-top: 1px solid rgba(245,234,214,.12); padding: 10px 0 9px; }
+  .favRow .t { font-size: 15.5px; }
+  .favRow .a { font-style: italic; opacity: .65; font-size: 13px; margin: 2px 0 7px; }
+  .favRow .links { display: flex; gap: 8px; align-items: center; }
+  .favRow a, .favRow button {
+    font-family: inherit; font-size: 12.5px; color: var(--paper);
+    background: rgba(245,234,214,.1); border: 1px solid rgba(245,234,214,.25);
+    border-radius: 6px; padding: 3px 9px; cursor: pointer; text-decoration: none;
+  }
+  .favRow a:hover, .favRow button:hover { border-color: var(--amber); color: var(--amber); }
+  .favRow .rm { margin-left: auto; }
+  #favClose {
+    background: none; border: 1px solid rgba(245,234,214,.35); color: var(--paper);
+    width: 100%; margin-top: 12px; border-radius: 9px; padding: 8px;
+    font-family: inherit; font-size: 14px; cursor: pointer;
+  }
+  #favClose:hover { border-color: var(--paper); }
+
+  /* ---- book card ---- */
+  #card {
+    position: fixed; right: 24px; top: 50%; transform: translateY(-50%) translateX(30px);
+    width: min(340px, calc(100vw - 48px)); z-index: 25; opacity: 0; pointer-events: none;
+    background: linear-gradient(170deg, #2c1d10 0%, #201409 100%);
+    border: 1px solid rgba(232,161,60,.45); border-radius: 14px; padding: 22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  #card.show { opacity: 1; pointer-events: auto; transform: translateY(-50%) translateX(0); }
+  #card .chip {
+    display: inline-block; font-size: 11.5px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--amber); border: 1px solid rgba(232,161,60,.5); border-radius: 20px;
+    padding: 3px 10px; margin-bottom: 10px;
+  }
+  #card h2 { font-size: 23px; font-weight: normal; line-height: 1.25; margin-bottom: 4px; }
+  #card .author { font-style: italic; opacity: .75; font-size: 15px; margin-bottom: 12px; }
+  #card .blurb { font-size: 14.5px; line-height: 1.55; opacity: .9; margin-bottom: 18px; }
+  #card .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  #card a, #card button {
+    font-family: inherit; font-size: 14.5px; border-radius: 9px; padding: 10px 16px;
+    cursor: pointer; text-decoration: none; text-align: center;
+  }
+  #card a.read { background: var(--teal); color: var(--paper); border: none; flex: 1; }
+  #card a.buy { background: var(--amber); color: var(--ink); border: none; flex: 1; }
+  #card a.disabled { opacity: .35; pointer-events: none; }
+  #card button.close {
+    background: none; border: 1px solid rgba(245,234,214,.35); color: var(--paper);
+    width: 100%; margin-top: 10px;
+  }
+  #card button.close:hover { border-color: var(--paper); }
+</style>
+</head>
+<body>
+  <div id="start">
+    <div class="glyph">📚</div>
+    <h1>The <em>Parallel</em> Shelf</h1>
+    <div class="tag">a tiny walkable bookshop · every book is a doorway</div>
+    <div class="keys">
+      <span><b>W A S D</b> walk</span>
+      <span><b>mouse</b> look</span>
+      <span><b>click</b> pull a book</span>
+      <span><b>shift</b> hurry (please don't)</span>
+    </div>
+    <button id="enter">Step inside →</button>
+    <div class="note">best with a keyboard &amp; mouse · books link to Project Gutenberg (read free) and Amazon (buy)</div>
+  </div>
+
+  <div id="crosshair"></div>
+  <div id="tooltip"></div>
+  <div id="hint"><b>W A S D</b> walk &nbsp; <b>click</b> pull a book &nbsp; <b>f</b> save ♥ &nbsp; <b>esc</b> put it back / free the mouse</div>
+  <div id="toast"></div>
+  <button id="soundBtn">♪ sound: on</button>
+  <button id="favBtn">♥ favorites</button>
+  <div id="favPanel">
+    <h3>♥ Your favorites</h3>
+    <div id="favList"></div>
+    <button id="favClose">close</button>
+  </div>
+
+  <div id="card">
+    <button id="cardFav" title="save to favorites (F)">♡</button>
+    <span class="chip" id="cardGenre"></span>
+    <h2 id="cardTitle"></h2>
+    <div class="author" id="cardAuthor"></div>
+    <div class="blurb" id="cardBlurb"></div>
+    <div class="row">
+      <a class="read" id="cardRead" target="_blank" rel="noopener">📖 Read free</a>
+      <a class="buy" id="cardBuy" target="_blank" rel="noopener">🛒 Buy a copy</a>
+    </div>
+    <button class="close" id="cardClose">↩ back on the shelf</button>
+  </div>
+
+  <script type="importmap">{ "imports": { "three": "./three.module.min.js" } }</script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
