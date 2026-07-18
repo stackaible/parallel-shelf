@@ -634,6 +634,25 @@ quotePoster('“We are all in the gutter, but some of us are looking at the star
   m.position.set(0, 2.75, ROOM.d / 2 - 0.05); m.rotation.y = Math.PI; scene.add(m);
 }
 
+// dust motes drifting in the window light
+const MOTES = 90;
+let motes;
+{
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(MOTES * 3);
+  for (let i = 0; i < MOTES; i++) {
+    pos[i * 3] = -12.6 + Math.random() * 3.6;        // spill from the west window
+    pos[i * 3 + 1] = 0.25 + Math.random() * 2.5;
+    pos[i * 3 + 2] = -0.6 + Math.random() * 3.6;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  motes = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xffd9a0, size: 0.022, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  scene.add(motes);
+}
+
 // the shop cat, asleep on the teal armchair
 let catMesh;
 {
@@ -1251,5 +1270,15 @@ renderer.setAnimationLoop(() => {
   stepTweens(dt);
   // cat breathing
   catMesh.scale.y = 1 + Math.sin(performance.now() / 700) * 0.03;
+  // dust drift
+  const tNow = performance.now() / 1000;
+  const mp = motes.geometry.attributes.position.array;
+  for (let i = 0; i < MOTES; i++) {
+    mp[i * 3] += Math.sin(tNow * 0.31 + i) * 0.0005;
+    mp[i * 3 + 1] += Math.cos(tNow * 0.23 + i * 1.7) * 0.0004 - 0.00018;
+    mp[i * 3 + 2] += Math.cos(tNow * 0.27 + i * 2.3) * 0.0005;
+    if (mp[i * 3 + 1] < 0.2) mp[i * 3 + 1] = 2.7;
+  }
+  motes.geometry.attributes.position.needsUpdate = true;
   renderer.render(scene, camera);
 });
