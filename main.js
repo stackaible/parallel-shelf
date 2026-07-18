@@ -857,7 +857,8 @@ renderer.domElement.addEventListener('mouseup', e => {
   if (!entered || IS_TOUCH) return;   // touch devices use the tap path below
   if (locked) { interact(); }
   else if (dragMode) { if (!dragged) interact(); }
-  else { tryLock(); }   // clicked while unlocked in lock mode → re-grab mouse
+  else if (pulled) { returnBook(); }  // card open, cursor free: a canvas click shelves the book and re-locks
+  else { tryLock(); }                 // clicked while unlocked in lock mode → re-grab mouse
   downAt = null;
 });
 
@@ -1078,11 +1079,20 @@ function pullFeatured(mesh) {
   openCard(mesh.userData.item);
 }
 
+function tryRelock() {
+  if (IS_TOUCH || dragMode || !entered || locked) return;
+  try {
+    const p = renderer.domElement.requestPointerLock();
+    if (p && p.catch) p.catch(() => { });   // no gesture available — user re-locks with their next click
+  } catch { }
+}
+
 function returnBook() {
   if (!pulled) return;
   const p = pulled; pulled = null;
   sfx.back();
   closeCard();
+  tryRelock();
   tween(0.45, k => {
     p.mesh.position.lerpVectors(p.mesh.position, p.homePos, k);
     p.mesh.quaternion.slerp(p.homeQuat, k);
@@ -1120,6 +1130,7 @@ function holdBook(dt) {
 // ---------------------------------------------------------------- card UI
 function openCard(item) {
   cardItem = item; syncHeart();
+  if (locked) document.exitPointerLock();   // free the cursor so the card's buttons are clickable
   document.getElementById('cardGenre').textContent = item.genre;
   document.getElementById('cardTitle').textContent = item.t;
   document.getElementById('cardAuthor').textContent = 'by ' + item.a;
